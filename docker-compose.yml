@@ -1,0 +1,82 @@
+version: '2.2'
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.7.0
+    container_name: es01
+    environment:
+      - node.name=es01
+      - discovery.type=single-node
+      - network.host=0.0.0.0
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - data01:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+    networks:
+      - elastic
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-f", "http://localhost:9200/_cat/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.7.0
+    container_name: log01
+    environment:
+        - xpack.monitoring.enabled=true
+        - xpack.monitoring.elasticsearch.hosts=http://elasticsearch:9200
+        - network.host=0.0.0.0
+    volumes:
+      - ./config/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    ports:
+      - 9600:9600
+    networks:
+      - elastic
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-f", "http://localhost:9600"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:7.7.0
+    container_name: fb01
+    volumes:
+      - ./config/filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - ./logs/:/logs/
+    networks:
+      - elastic
+    depends_on:
+      logstash:
+        condition: service_healthy
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.7.0
+    container_name: kib01
+    ports:
+      - 5601:5601
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    networks:
+      - elastic
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+volumes:
+  data01:
+    driver: local
+
+networks:
+  elastic:
+    driver: bridge
