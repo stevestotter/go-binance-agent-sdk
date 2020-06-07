@@ -17,4 +17,8 @@ The following aims are to:
 
 ``` make deps``` - grabs dependencies needed for the project
 
+``` make mocks ``` - cleans and re-generates mocks for testing
+
 ``` make run``` - runs the application
+
+``` make test``` - runs the tests with race detection

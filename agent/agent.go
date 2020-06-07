@@ -8,43 +8,62 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type Agent struct {
-	Feed feeder.Feeder
-}
+//go:generate go run -mod=mod github.com/golang/mock/mockgen --source=agent.go --destination=../mocks/agent/agent.go
 
+// MarketListener structs implement essential market functions for all agent strategies
 type MarketListener interface {
-	OnTradeUpdate(feeder.Trade)
-	OnBookUpdate(feeder.Event)
-	//OnAssignment
-	//OnTradeSuccessful
+	OnTrade(price float64, quantity float64, tradeID string, params ...interface{})
+	OnBookUpdateBid(price float64, quantity float64, params ...interface{})
+	OnBookUpdateAsk(price float64, quantity float64, params ...interface{})
 }
 
-func (a *Agent) Start() {
+// Agent is a trader in the market - either buying or selling goods
+// The Strategy provided will make the intelligent decisions on what to
+// do on trade & on market events
+type Agent struct {
+	Feed     feeder.Feeder
+	Strategy MarketListener
+	//TODO: Initial orders
+}
+
+// Start gets the Agent to start listening to market feeds, convert
+// assignments to orders, and adjusts prices of those orders continuously
+func (a *Agent) Start() error {
+	// Make sure we get new random numbers each run
+	// TODO: a.Strategy.Init() or on new function?
+
+	// TODO: Add assignment feed
+
 	tChan, err := a.Feed.Trades()
 	if err != nil {
-		log.Fatal().Err(err).
+		log.Error().Err(err).
 			Msg("error on reading trades")
+		return err
 	}
 
 	eChan, err := a.Feed.BookUpdates()
 	if err != nil {
-		log.Fatal().Err(err).
+		log.Error().Err(err).
 			Msg("error on reading book updates")
+		return err
 	}
 
 	go func() {
 		for t := range tChan {
-			a.OnTradeUpdate(t)
+			a.onTradeEvent(t)
 		}
 	}()
 
-	for e := range eChan {
-		a.OnBookUpdate(e)
-	}
+	go func() {
+		for e := range eChan {
+			a.onBookEvent(e)
+		}
+	}()
+
+	return nil
 }
 
-// OnTradeUpdate just logs for now
-func (a *Agent) OnTradeUpdate(t feeder.Trade) {
+func (a *Agent) onTradeEvent(t feeder.Trade) {
 	price, err := strconv.ParseFloat(t.Price, 64)
 	if err != nil {
 		log.Error().Err(err).
@@ -65,32 +84,46 @@ func (a *Agent) OnTradeUpdate(t feeder.Trade) {
 		Int("buyer_order_id", t.BuyerOrderID).
 		Int("seller_order_id", t.SellerOrderID).
 		Msg("trade")
+
+	a.Strategy.OnTrade(price, quantity, string(t.ID), t.BuyerOrderID, t.SellerOrderID)
 }
 
-// OnBookUpdate just logs for now
-func (a *Agent) OnBookUpdate(e feeder.Event) {
+func (a *Agent) onBookEvent(e feeder.Event) {
 	price, err := strconv.ParseFloat(e.Price, 64)
 	if err != nil {
 		log.Error().Err(err).
 			Msg("Unable to convert price to float")
+		return
 	}
 
 	quantity, err := strconv.ParseFloat(e.Quantity, 64)
 	if err != nil {
 		log.Error().Err(err).
 			Msg("Unable to convert quantity to float")
+		return
 	}
 
-	if quantity == 0 {
-		log.Debug().
-			Float64("price", price).
-			Str("event_type", fmt.Sprintf("%s_removed", e.Type)).
-			Msg("book removal")
-	} else {
+	if quantity != 0 {
 		log.Debug().
 			Float64("price", price).
 			Float64("quantity", quantity).
 			Str("event_type", e.Type).
 			Msg("book update")
+
+		switch e.Type {
+		case feeder.Ask:
+			a.Strategy.OnBookUpdateAsk(price, quantity)
+		case feeder.Bid:
+			a.Strategy.OnBookUpdateBid(price, quantity)
+		default:
+			log.Error().
+				Msgf("Unknown event type on book update: %s", e.Type)
+			return
+		}
+	} else {
+		log.Debug().
+			Float64("price", price).
+			Str("event_type", fmt.Sprintf("%s_removed", e.Type)).
+			Msg("book removal")
 	}
 }

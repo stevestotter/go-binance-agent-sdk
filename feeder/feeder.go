@@ -11,6 +11,16 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	// BinanceURL is the base URL for all interactions with the Binance platform
+	BinanceURL string = "stream.binance.com:9443"
+
+	// Bid is an event type for a bid in the market
+	Bid string = "bid"
+	// Ask is an event type for an ask in the market
+	Ask string = "ask"
+)
+
 var (
 	errDialConnection = errors.New("Failed to establish a connection")
 )
@@ -113,9 +123,9 @@ var DefaultSocketOptions = &SocketConnectionOptions{
 	BackOffTime: 5 * time.Second,
 }
 
-func NewBinanceFeeder(baseURL string, symbol string) *BinanceFeeder {
+func NewBinanceFeeder(symbol string) *BinanceFeeder {
 	return &BinanceFeeder{
-		baseURL:       baseURL,
+		baseURL:       BinanceURL,
 		socketOptions: DefaultSocketOptions,
 		Symbol:        symbol,
 	}
@@ -214,7 +224,7 @@ func (bf *BinanceFeeder) BookUpdates() (<-chan Event, error) {
 			go func() {
 				for _, bid := range b.Bids {
 					e := Event{
-						Type:      "bid",
+						Type:      Bid,
 						EventTime: b.EventTime,
 						Price:     bid[0],
 						Quantity:  bid[1],
@@ -226,7 +236,7 @@ func (bf *BinanceFeeder) BookUpdates() (<-chan Event, error) {
 			go func() {
 				for _, ask := range b.Asks {
 					e := Event{
-						Type:      "ask",
+						Type:      Ask,
 						EventTime: b.EventTime,
 						Price:     ask[0],
 						Quantity:  ask[1],
