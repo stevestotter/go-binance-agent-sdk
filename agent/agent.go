@@ -85,7 +85,7 @@ func (a *Agent) onTradeEvent(t feeder.Trade) {
 		Int("seller_order_id", t.SellerOrderID).
 		Msg("trade")
 
-	a.Strategy.OnTrade(price, quantity, string(t.ID), t.BuyerOrderID, t.SellerOrderID)
+	a.Strategy.OnTrade(price, quantity, fmt.Sprint(t.ID), t.BuyerOrderID, t.SellerOrderID)
 }
 
 func (a *Agent) onBookEvent(e feeder.Event) {
