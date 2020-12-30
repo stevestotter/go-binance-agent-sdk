@@ -1,0 +1,39 @@
+name: Go Binance Trader
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+
+  test:
+    name: Test Go Binance Trader
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: [ '1.15', '1.14' ]
+
+    steps:
+      - name: Checking out the source code
+        uses: actions/checkout@master
+
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Generating mocks
+        run: make mocks
+
+      - name: Grab dependencies
+        run: make deps
+
+      - name: Run tests
+        run: make test
+
+      - name: Bump version and push tag
+        uses: anothrNick/github-tag-action@1.26.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WITH_V: true
