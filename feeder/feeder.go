@@ -11,6 +11,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+//go:generate go run -mod=mod github.com/golang/mock/mockgen --source=feeder.go --destination=../mocks/feeder/feeder.go
+
 const (
 	// BinanceURL is the base URL for all interactions with the Binance platform
 	BinanceURL string = "stream.binance.com:9443"
