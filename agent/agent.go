@@ -2,8 +2,9 @@ package agent
 
 import (
 	"fmt"
-	"stevestotter/go-binance-trader/feeder"
 	"strconv"
+
+	"github.com/stevestotter/go-binance-trader/feeder"
 
 	"github.com/rs/zerolog/log"
 )

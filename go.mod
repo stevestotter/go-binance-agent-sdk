@@ -1,4 +1,4 @@
-module stevestotter/go-binance-trader
+module github.com/stevestotter/go-binance-trader
 
 go 1.15
 
