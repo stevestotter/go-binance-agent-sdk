@@ -11,8 +11,8 @@ mocks:
 	rm -rf mocks
 	go generate -v ./...
 
-run:
-	go run $(GOFILES)
+run-simple-agent:
+	go run examples/simple-agent/main.go
 
 test:
 	go test -race -count=1 ./...

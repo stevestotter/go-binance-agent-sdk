@@ -25,7 +25,12 @@ func NewSimpleStrategyBuyer() SimpleStrategy {
 	return SimpleStrategy{Mode: Buyer}
 }
 
-func (s *SimpleStrategy) OnTrade(price float64, quantity float64, tradeID string, params ...interface{}) {
+func (s *SimpleStrategy) NewOrder(orderID string, price float64, quantity float64, params ...interface{}) error {
+	//TODO
+	return nil
+}
+
+func (s *SimpleStrategy) OnTrade(price float64, quantity float64, tradeID string, buyerOrderID string, sellerOrderID string, params ...interface{}) {
 	//TODO
 }
 

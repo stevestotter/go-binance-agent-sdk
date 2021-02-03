@@ -66,6 +66,8 @@ func TestAgentStartSendsTradesToStrategy(t *testing.T) {
 	var expPrice float64 = 1.01
 	var expQuantity float64 = 100
 	expTradeID := "12345"
+	expBuyerOrderID := "88"
+	expSellerOrderID := "52"
 
 	mockFeeder.EXPECT().
 		Trades().
@@ -78,16 +80,15 @@ func TestAgentStartSendsTradesToStrategy(t *testing.T) {
 		Return(make(chan feeder.Event), nil)
 
 	mockStrategy.EXPECT().
-		OnTrade(expPrice, expQuantity, expTradeID, gomock.Any()).
+		OnTrade(expPrice, expQuantity, expTradeID, expBuyerOrderID, expSellerOrderID, gomock.Any()).
 		Times(1)
 
 	a := Agent{mockFeeder, mockStrategy}
-	err := a.Start()
-	assert.NoError(t, err)
+	go a.Start()
 
 	trade := feeder.Trade{
 		BuyerOrderID:  88,
-		SellerOrderID: 50,
+		SellerOrderID: 52,
 		TradeTime:     123456785,
 		Order: feeder.Order{
 			ID: 12345,
@@ -132,8 +133,7 @@ func TestAgentStartSendsBookBidUpdatesToStrategy(t *testing.T) {
 		Times(1)
 
 	a := Agent{mockFeeder, mockStrategy}
-	err := a.Start()
-	assert.NoError(t, err)
+	go a.Start()
 
 	event := feeder.Event{
 		Type:      "bid",
@@ -174,8 +174,7 @@ func TestAgentStartSendsBookAskUpdatesToStrategy(t *testing.T) {
 		Times(1)
 
 	a := Agent{mockFeeder, mockStrategy}
-	err := a.Start()
-	assert.NoError(t, err)
+	go a.Start()
 
 	event := feeder.Event{
 		Type:      "ask",
@@ -214,8 +213,7 @@ func TestAgentStartDoesNotSendRemovalBookUpdatesToStrategy(t *testing.T) {
 		Return(eventChan, nil)
 
 	a := Agent{mockFeeder, mockStrategy}
-	err := a.Start()
-	assert.NoError(t, err)
+	go a.Start()
 
 	event := feeder.Event{
 		Type:      "bid",
@@ -252,8 +250,7 @@ func TestAgentStartDoesNotSendUnknownBookUpdatesToStrategy(t *testing.T) {
 		Return(eventChan, nil)
 
 	a := Agent{mockFeeder, mockStrategy}
-	err := a.Start()
-	assert.NoError(t, err)
+	go a.Start()
 
 	event := feeder.Event{
 		Type:      "something",

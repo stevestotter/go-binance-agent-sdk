@@ -13,7 +13,8 @@ import (
 
 // MarketListener structs implement essential market functions for all agent strategies
 type MarketListener interface {
-	OnTrade(price float64, quantity float64, tradeID string, params ...interface{})
+	NewOrder(orderID string, price float64, quantity float64, params ...interface{}) error
+	OnTrade(price float64, quantity float64, tradeID string, buyerOrderID string, sellerOrderID string, params ...interface{})
 	OnBookUpdateBid(price float64, quantity float64, params ...interface{})
 	OnBookUpdateAsk(price float64, quantity float64, params ...interface{})
 }
@@ -55,11 +56,9 @@ func (a *Agent) Start() error {
 		}
 	}()
 
-	go func() {
-		for e := range eChan {
-			a.onBookEvent(e)
-		}
-	}()
+	for e := range eChan {
+		a.onBookEvent(e)
+	}
 
 	return nil
 }
@@ -86,7 +85,7 @@ func (a *Agent) onTradeEvent(t feeder.Trade) {
 		Int("seller_order_id", t.SellerOrderID).
 		Msg("trade")
 
-	a.Strategy.OnTrade(price, quantity, fmt.Sprint(t.ID), t.BuyerOrderID, t.SellerOrderID)
+	a.Strategy.OnTrade(price, quantity, fmt.Sprint(t.ID), fmt.Sprint(t.BuyerOrderID), fmt.Sprint(t.SellerOrderID))
 }
 
 func (a *Agent) onBookEvent(e feeder.Event) {

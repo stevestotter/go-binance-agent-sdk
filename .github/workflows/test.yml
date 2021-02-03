@@ -31,7 +31,13 @@ jobs:
 
       - name: Run tests
         run: make test
+  
+  publish:
+    name: Tag Go Binance Trader
+    runs-on: ubuntu-latest
+    needs: test
 
+    steps:
       - name: Bump version and push tag
         uses: anothrNick/github-tag-action@1.26.0
         env:
