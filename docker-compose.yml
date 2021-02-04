@@ -1,8 +1,8 @@
 version: '2.2'
 services:
-  go-binance-trader:
+  go-binance-agent-sdk:
     build: .
-    container_name: go-binance-trader
+    container_name: go-binance-agent-sdk
     labels:
       - co.elastic.logs/enabled=true
     volumes:

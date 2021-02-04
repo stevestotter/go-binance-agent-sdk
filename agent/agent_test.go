@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stevestotter/go-binance-trader/feeder"
-	mock_agent "github.com/stevestotter/go-binance-trader/mocks/agent"
-	mock_feeder "github.com/stevestotter/go-binance-trader/mocks/feeder"
+	"github.com/stevestotter/go-binance-agent-sdk/feeder"
+	mock_agent "github.com/stevestotter/go-binance-agent-sdk/mocks/agent"
+	mock_feeder "github.com/stevestotter/go-binance-agent-sdk/mocks/feeder"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"

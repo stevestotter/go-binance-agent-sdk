@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/stevestotter/go-binance-trader/agent"
-	"github.com/stevestotter/go-binance-trader/feeder"
+	"github.com/stevestotter/go-binance-agent-sdk/agent"
+	"github.com/stevestotter/go-binance-agent-sdk/feeder"
 
 	"github.com/rs/zerolog/log"
 )

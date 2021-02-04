@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/stevestotter/go-binance-trader/feeder"
+	"github.com/stevestotter/go-binance-agent-sdk/feeder"
 
 	"github.com/rs/zerolog/log"
 )
