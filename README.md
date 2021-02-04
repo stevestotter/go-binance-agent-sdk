@@ -5,7 +5,7 @@ Using [Binance](https://www.binance.com/en) feeds of cryptocurrency markets to i
 The SDK aims to:
 - Provide the community with a framework in order to build their own agents and take advantage of algorithmic trading
 - Provide common interfaces for agents, feeds and exchange interactions
-- Provide an example agent & exchange simulator to be able to get started quickly and run experiments during development
+- Provide an [example agent](examples/simple-agent) & exchange simulator to be able to get started quickly and run experiments during development
 
 
 **Please Note:** This is still at a very early stage so code structure, interfaces and even the name of this repository are likely to change.
@@ -18,5 +18,3 @@ The SDK aims to:
 ``` make mocks ``` - cleans and re-generates mocks for testing
 
 ``` make test``` - runs the tests with race detection
-
-``` make run-simple-agent``` - runs the simple agent in the examples/ folder

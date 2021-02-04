@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/stevestotter/go-binance-agent-sdk/feeder"
-
 	"github.com/rs/zerolog/log"
+	"github.com/stevestotter/go-binance-agent-sdk/feeder"
 )
 
 //go:generate go run -mod=mod github.com/golang/mock/mockgen --source=agent.go --destination=../mocks/agent/agent.go
@@ -31,9 +30,6 @@ type Agent struct {
 // Start gets the Agent to start listening to market feeds, convert
 // assignments to orders, and adjusts prices of those orders continuously
 func (a *Agent) Start() error {
-	// Make sure we get new random numbers each run
-	// TODO: a.Strategy.Init() or on new function?
-
 	// TODO: Add assignment feed
 
 	tChan, err := a.Feed.Trades()
@@ -76,15 +72,6 @@ func (a *Agent) onTradeEvent(t feeder.Trade) {
 			Msg("Unable to convert quantity to float")
 	}
 
-	log.Debug().
-		Float64("price", price).
-		Float64("quantity", quantity).
-		Str("event_type", t.Type).
-		Int("trade_id", t.ID).
-		Int("buyer_order_id", t.BuyerOrderID).
-		Int("seller_order_id", t.SellerOrderID).
-		Msg("trade")
-
 	a.Strategy.OnTrade(price, quantity, fmt.Sprint(t.ID), fmt.Sprint(t.BuyerOrderID), fmt.Sprint(t.SellerOrderID))
 }
 
@@ -104,12 +91,6 @@ func (a *Agent) onBookEvent(e feeder.Event) {
 	}
 
 	if quantity != 0 {
-		log.Debug().
-			Float64("price", price).
-			Float64("quantity", quantity).
-			Str("event_type", e.Type).
-			Msg("book update")
-
 		switch e.Type {
 		case feeder.Ask:
 			a.Strategy.OnBookUpdateAsk(price, quantity)
@@ -121,9 +102,7 @@ func (a *Agent) onBookEvent(e feeder.Event) {
 			return
 		}
 	} else {
-		log.Debug().
-			Float64("price", price).
-			Str("event_type", fmt.Sprintf("%s_removed", e.Type)).
-			Msg("book removal")
+		// removed off order book
+		// TODO: potential additional event for strategy?
 	}
 }
