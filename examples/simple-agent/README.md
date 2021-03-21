@@ -19,6 +19,6 @@ By creating dashboards on trades and market activity, you can keep track of how 
 
 ``` make docker-stack-up``` - brings up the agent and a whole ELK stack in containers, in detached mode
 
-``` docker-stack-down``` - brings down all containers
+``` make docker-stack-down``` - brings down all containers
 
-```docker-stack-destroy``` - brings down all containers and destroys volumes
+``` make docker-stack-destroy``` - brings down all containers and destroys volumes

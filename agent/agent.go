@@ -2,10 +2,9 @@ package agent
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/rs/zerolog/log"
-	"github.com/stevestotter/go-binance-agent-sdk/feeder"
+	"github.com/stevestotter/go-binance-agent-sdk/exchange"
 )
 
 //go:generate go run -mod=mod github.com/golang/mock/mockgen --source=agent.go --destination=../mocks/agent/agent.go
@@ -22,7 +21,7 @@ type MarketListener interface {
 // The Strategy provided will make the intelligent decisions on what to
 // do on trade & on market events
 type Agent struct {
-	Feed     feeder.Feeder
+	Feed     exchange.Feeder
 	Strategy MarketListener
 	//TODO: Initial orders
 }
@@ -39,7 +38,7 @@ func (a *Agent) Start() error {
 		return err
 	}
 
-	eChan, err := a.Feed.BookUpdates()
+	buChan, err := a.Feed.BookUpdates()
 	if err != nil {
 		log.Error().Err(err).
 			Msg("error on reading book updates")
@@ -52,55 +51,45 @@ func (a *Agent) Start() error {
 		}
 	}()
 
-	for e := range eChan {
-		a.onBookEvent(e)
+	for b := range buChan {
+		a.onBookUpdate(b)
 	}
 
 	return nil
 }
 
-func (a *Agent) onTradeEvent(t feeder.Trade) {
-	price, err := strconv.ParseFloat(t.Price, 64)
-	if err != nil {
-		log.Error().Err(err).
-			Msg("Unable to convert price to float")
-	}
-
-	quantity, err := strconv.ParseFloat(t.Quantity, 64)
-	if err != nil {
-		log.Error().Err(err).
-			Msg("Unable to convert quantity to float")
-	}
-
-	a.Strategy.OnTrade(price, quantity, fmt.Sprint(t.ID), fmt.Sprint(t.BuyerOrderID), fmt.Sprint(t.SellerOrderID))
+func (a *Agent) onTradeEvent(t exchange.Trade) {
+	a.Strategy.OnTrade(t.Price, t.Quantity, fmt.Sprint(t.ID), fmt.Sprint(t.BuyerOrderID), fmt.Sprint(t.SellerOrderID))
 }
 
-func (a *Agent) onBookEvent(e feeder.Event) {
-	price, err := strconv.ParseFloat(e.Price, 64)
-	if err != nil {
-		log.Error().Err(err).
-			Msg("Unable to convert price to float")
-		return
-	}
-
-	quantity, err := strconv.ParseFloat(e.Quantity, 64)
-	if err != nil {
-		log.Error().Err(err).
-			Msg("Unable to convert quantity to float")
-		return
-	}
-
-	if quantity != 0 {
-		switch e.Type {
-		case feeder.Ask:
-			a.Strategy.OnBookUpdateAsk(price, quantity)
-		case feeder.Bid:
-			a.Strategy.OnBookUpdateBid(price, quantity)
-		default:
-			log.Error().
-				Msgf("Unknown event type on book update: %s", e.Type)
-			return
+func (a *Agent) onBookUpdate(b exchange.BookUpdate) {
+	// Iterate bids and asks in a concurrent fashion so that not all bids (/asks) are sent
+	// to the strategy at the same time - which could skew agent mechanics
+	go func(b exchange.BookUpdate) {
+		for _, bid := range b.Bids {
+			a.onBookUpdateBid(bid.Price, bid.Quantity)
 		}
+	}(b)
+
+	go func(b exchange.BookUpdate) {
+		for _, ask := range b.Asks {
+			a.onBookUpdateAsk(ask.Price, ask.Quantity)
+		}
+	}(b)
+}
+
+func (a *Agent) onBookUpdateBid(price float64, quantity float64) {
+	if quantity != 0 {
+		a.Strategy.OnBookUpdateBid(price, quantity)
+	} else {
+		// removed off order book
+		// TODO: potential additional event for strategy?
+	}
+}
+
+func (a *Agent) onBookUpdateAsk(price float64, quantity float64) {
+	if quantity != 0 {
+		a.Strategy.OnBookUpdateAsk(price, quantity)
 	} else {
 		// removed off order book
 		// TODO: potential additional event for strategy?

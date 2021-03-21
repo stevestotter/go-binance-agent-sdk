@@ -4,7 +4,8 @@ package exchange
 
 // MarketExchange structs implement the ability to manage orders and get exchange info
 type MarketExchange interface {
-	UpdateOrder(orderID string, newPrice float64, newQuantity float64) error
+	UpdateBid(orderID string, newPrice float64, newQuantity float64) error
+	UpdateAsk(orderID string, newPrice float64, newQuantity float64) error
 	OrderFulfilled(orderID string, price float64, quantity float64)
 	GetBestBid() float64
 	GetBestAsk() float64

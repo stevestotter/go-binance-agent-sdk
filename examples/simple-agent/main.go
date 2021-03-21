@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/rs/zerolog/log"
 	"github.com/stevestotter/go-binance-agent-sdk/agent"
-	"github.com/stevestotter/go-binance-agent-sdk/feeder"
+	"github.com/stevestotter/go-binance-agent-sdk/exchange"
 )
 
 // Mode describes the type of agent
@@ -66,7 +66,7 @@ func (s *SimpleStrategy) OnBookUpdateAsk(price float64, quantity float64, params
 }
 
 func main() {
-	bf := feeder.NewBinanceFeeder(Market)
+	bf := exchange.NewBinanceFeeder(Market)
 
 	// TODO randomise sleep by +-10% to avoid synchronousity with other agents launched at same time
 	s := NewSimpleStrategyBuyer()

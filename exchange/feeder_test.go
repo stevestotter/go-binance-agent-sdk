@@ -1,4 +1,4 @@
-package feeder
+package exchange
 
 import (
 	"bufio"
@@ -56,6 +56,22 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestNewBinanceFeederReturnsSetUpBinanceFeeder(t *testing.T) {
+	b := NewBinanceFeeder("BTCBNB")
+	assert.Equal(t, "BTCBNB", b.symbol)
+	assert.Equal(t, DefaultSocketOptions, b.socketOptions)
+	assert.Equal(t, "stream.binance.com:9443", b.baseURL)
+}
+
+func TestBinanceFeederImplementsFeederInterface(t *testing.T) {
+	assert.Implements(t, (*Feeder)(nil), &binanceFeeder{}, "Does not implement interface")
+}
+
+func TestBinanceFeederGetSymbolReturnsSymbol(t *testing.T) {
+	b := NewBinanceFeeder("BTCBNB")
+	assert.Equal(t, "BTCBNB", b.GetSymbol())
+}
+
 var (
 	rawTrade = `{
 		"e": "trade",
@@ -75,15 +91,11 @@ var (
 		BuyerOrderID:  88,
 		SellerOrderID: 50,
 		TradeTime:     123456785,
-		Order: Order{
-			ID: 12345,
-			Event: Event{
-				Type:      "trade",
-				EventTime: 123456789,
-				Price:     "0.001",
-				Quantity:  "100",
-			},
-		},
+		ID:            12345,
+		Type:          "trade",
+		EventTime:     123456789,
+		Price:         0.001,
+		Quantity:      100,
 	}
 )
 
@@ -104,10 +116,10 @@ func TestBinanceFeederTradesReturnsWorkingChannelThatReceivesTrades(t *testing.T
 		MaxRetries: 0,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
@@ -152,10 +164,10 @@ func TestBinanceFeederTradesRetriesOnConnectionFailure(t *testing.T) {
 		BackOffTime: 1 * time.Second,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
@@ -188,10 +200,10 @@ func TestBinanceFeederTradesReturnsErrorOnConnectionFailureAfterMaxRetries(t *te
 		BackOffTime: 10 * time.Millisecond,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
@@ -218,10 +230,10 @@ func TestBinanceFeederTradesRetriesOnWebsocketReadError(t *testing.T) {
 		BackOffTime: 1 * time.Second,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
@@ -260,10 +272,10 @@ func TestBinanceFeederTradesClosesChannelAfterMaxRetries(t *testing.T) {
 		BackOffTime: 1 * time.Second,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
@@ -281,7 +293,7 @@ func TestBinanceFeederTradesClosesChannelAfterMaxRetries(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestBinanceFeederTradesSkipsAndLogsTradeOnUnmarshalError(t *testing.T) {
+func TestBinanceFeederTradesSkipsAndLogsOnUnmarshalError(t *testing.T) {
 	//arrange
 	logBuffer.Reset()
 
@@ -317,15 +329,11 @@ func TestBinanceFeederTradesSkipsAndLogsTradeOnUnmarshalError(t *testing.T) {
 		BuyerOrderID:  88,
 		SellerOrderID: 50,
 		TradeTime:     123456785,
-		Order: Order{
-			ID: 12345,
-			Event: Event{
-				Type:      "trade",
-				EventTime: 123456789,
-				Price:     "0.001",
-				Quantity:  "100",
-			},
-		},
+		ID:            12345,
+		Type:          "trade",
+		EventTime:     123456789,
+		Price:         0.001,
+		Quantity:      100,
 	}
 
 	mc := make(chan string, 3)
@@ -345,10 +353,10 @@ func TestBinanceFeederTradesSkipsAndLogsTradeOnUnmarshalError(t *testing.T) {
 		BackOffTime: 1 * time.Second,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
@@ -385,18 +393,22 @@ var (
 		]
 	}`
 
-	expectedBidEvent = Event{
-		Type:      "bid",
+	expectedBookUpdate = BookUpdate{
+		Type:      "depthUpdate",
 		EventTime: 123456789,
-		Price:     "0.0024",
-		Quantity:  "10",
-	}
-
-	expectedAskEvent = Event{
-		Type:      "ask",
-		EventTime: 123456789,
-		Price:     "0.0026",
-		Quantity:  "100",
+		Bids: []BookEntry{
+			{
+				Price:    0.0024,
+				Quantity: 10,
+			},
+		},
+		Asks: []BookEntry{
+			{
+				Price:    0.0026,
+				Quantity: 100,
+			},
+		},
+		LastUpdateID: 160,
 	}
 )
 
@@ -417,25 +429,22 @@ func TestBinanceFeederBookUpdatesReturnsWorkingChannelThatReturnsEvents(t *testi
 		MaxRetries: 0,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
-	ec, err := bf.BookUpdates()
+	buChan, err := bf.BookUpdates()
 
 	//assert
 	assert.NoError(t, err)
 
-	var actuals []Event
+	var actuals []BookUpdate
+	actuals = append(actuals, <-buChan)
 
-	actuals = append(actuals, <-ec)
-	actuals = append(actuals, <-ec)
-
-	assert.Contains(t, actuals, expectedBidEvent)
-	assert.Contains(t, actuals, expectedAskEvent)
+	assert.Contains(t, actuals, expectedBookUpdate)
 }
 
 func TestBinanceFeederBookUpdatesRetriesOnConnectionFailure(t *testing.T) {
@@ -460,26 +469,23 @@ func TestBinanceFeederBookUpdatesRetriesOnConnectionFailure(t *testing.T) {
 		BackOffTime: 1 * time.Second,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
-	ec, err := bf.BookUpdates()
+	buChan, err := bf.BookUpdates()
 
 	//assert
 	assert.NoError(t, err)
 	assertContainsErrorLog(t, logBuffer.buf, "connection error")
 
-	var actuals []Event
+	var actuals []BookUpdate
+	actuals = append(actuals, <-buChan)
 
-	actuals = append(actuals, <-ec)
-	actuals = append(actuals, <-ec)
-
-	assert.Contains(t, actuals, expectedBidEvent)
-	assert.Contains(t, actuals, expectedAskEvent)
+	assert.Contains(t, actuals, expectedBookUpdate)
 }
 
 func TestBinanceFeederBookUpdatesReturnsErrorOnConnectionFailureAfterMaxRetries(t *testing.T) {
@@ -500,10 +506,10 @@ func TestBinanceFeederBookUpdatesReturnsErrorOnConnectionFailureAfterMaxRetries(
 		BackOffTime: 10 * time.Millisecond,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
@@ -530,14 +536,14 @@ func TestBinanceFeederBookUpdatesRetriesOnWebsocketReadError(t *testing.T) {
 		BackOffTime: 1 * time.Second,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
-	ec, err := bf.BookUpdates()
+	buChan, err := bf.BookUpdates()
 
 	// close channel and restart webserver
 	close(mc)
@@ -549,16 +555,14 @@ func TestBinanceFeederBookUpdatesRetriesOnWebsocketReadError(t *testing.T) {
 	//assert
 	assert.NoError(t, err)
 
-	var actuals []Event
+	var actuals []BookUpdate
 
-	actuals = append(actuals, <-ec)
-	actuals = append(actuals, <-ec)
-	actuals = append(actuals, <-ec)
-	actuals = append(actuals, <-ec)
+	actuals = append(actuals, <-buChan)
+	actuals = append(actuals, <-buChan)
 
-	assert.Contains(t, actuals, expectedBidEvent)
-	assert.Contains(t, actuals, expectedAskEvent)
-	assert.Len(t, actuals, 4)
+	assert.Contains(t, actuals, expectedBookUpdate)
+	assert.Contains(t, actuals, expectedBookUpdate)
+	assert.Len(t, actuals, 2)
 }
 
 func TestBinanceFeederBookUpdatesClosesChannelAfterMaxRetries(t *testing.T) {
@@ -575,14 +579,14 @@ func TestBinanceFeederBookUpdatesClosesChannelAfterMaxRetries(t *testing.T) {
 		BackOffTime: 1 * time.Second,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
-	ec, err := bf.BookUpdates()
+	buChan, err := bf.BookUpdates()
 
 	// close channel and restart webserver
 	close(mc)
@@ -592,11 +596,11 @@ func TestBinanceFeederBookUpdatesClosesChannelAfterMaxRetries(t *testing.T) {
 	//assert
 	assert.NoError(t, err)
 
-	_, ok := <-ec
+	_, ok := <-buChan
 	assert.False(t, ok)
 }
 
-func TestBinanceFeederBookUpdatesSkipsAndLogsTradeOnUnmarshalError(t *testing.T) {
+func TestBinanceFeederBookUpdatesSkipsAndLogsOnUnmarshalError(t *testing.T) {
 	//arrange
 	logBuffer.Reset()
 
@@ -620,7 +624,48 @@ func TestBinanceFeederBookUpdatesSkipsAndLogsTradeOnUnmarshalError(t *testing.T)
 		]
 	}`
 
-	var goodBookUpdate = `{
+	mc := make(chan string, 3)
+	defer close(mc)
+
+	ws := newTestServer(depthURL, mc)
+	defer ws.Close()
+
+	mc <- badBookUpdate
+	mc <- rawBookUpdate // good update
+
+	testDialer := websocket.DefaultDialer
+	testDialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	opts := &SocketConnectionOptions{
+		Dialer:      testDialer,
+		MaxRetries:  1,
+		BackOffTime: 1 * time.Second,
+	}
+
+	bf := &binanceFeeder{
+		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
+		socketOptions: opts,
+		symbol:        testSymbol,
+	}
+
+	//act
+	buChan, err := bf.BookUpdates()
+
+	//assert
+	assert.NoError(t, err)
+
+	var actuals []BookUpdate
+	actuals = append(actuals, <-buChan)
+
+	assert.Contains(t, actuals, expectedBookUpdate)
+
+	assertContainsErrorLog(t, logBuffer.buf, "error unmarshalling book update")
+}
+
+func TestBinanceFeederBookUpdatesSkipsAndLogsOnUnmarshalBookEntryError(t *testing.T) {
+	//arrange
+	logBuffer.Reset()
+
+	var badBookUpdate1 = `{
 		"e": "depthUpdate",
 		"E": 123456789,
 		"s": "BNBBTC",
@@ -629,7 +674,8 @@ func TestBinanceFeederBookUpdatesSkipsAndLogsTradeOnUnmarshalError(t *testing.T)
 		"b": [
 			[
 			"0.0024",
-			"10"
+			"10",
+			"250"
 			]
 		],
 		"a": [
@@ -640,19 +686,25 @@ func TestBinanceFeederBookUpdatesSkipsAndLogsTradeOnUnmarshalError(t *testing.T)
 		]
 	}`
 
-	var expectedGoodBidEvent = Event{
-		Type:      "bid",
-		EventTime: 123456789,
-		Price:     "0.0024",
-		Quantity:  "10",
-	}
-
-	var expectedGoodAskEvent = Event{
-		Type:      "ask",
-		EventTime: 123456789,
-		Price:     "0.0026",
-		Quantity:  "100",
-	}
+	var badBookUpdate2 = `{
+		"e": "depthUpdate",
+		"E": 123456789,
+		"s": "BNBBTC",
+		"U": 157,
+		"u": 160,
+		"b": [
+			[
+			"0.0024",
+			10
+			]
+		],
+		"a": [
+			[
+			"0.0026",
+			"100"
+			]
+		]
+	}`
 
 	mc := make(chan string, 3)
 	defer close(mc)
@@ -660,8 +712,9 @@ func TestBinanceFeederBookUpdatesSkipsAndLogsTradeOnUnmarshalError(t *testing.T)
 	ws := newTestServer(depthURL, mc)
 	defer ws.Close()
 
-	mc <- badBookUpdate
-	mc <- goodBookUpdate
+	mc <- badBookUpdate1
+	mc <- badBookUpdate2
+	mc <- rawBookUpdate // good update
 
 	testDialer := websocket.DefaultDialer
 	testDialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
@@ -671,30 +724,30 @@ func TestBinanceFeederBookUpdatesSkipsAndLogsTradeOnUnmarshalError(t *testing.T)
 		BackOffTime: 1 * time.Second,
 	}
 
-	bf := &BinanceFeeder{
+	bf := &binanceFeeder{
 		baseURL:       strings.TrimPrefix(ws.URL, "wss://"),
 		socketOptions: opts,
-		Symbol:        testSymbol,
+		symbol:        testSymbol,
 	}
 
 	//act
-	ec, err := bf.BookUpdates()
+	buChan, err := bf.BookUpdates()
 
 	//assert
 	assert.NoError(t, err)
 
-	var actuals []Event
-	actuals = append(actuals, <-ec)
-	actuals = append(actuals, <-ec)
+	var actuals []BookUpdate
+	actuals = append(actuals, <-buChan)
 
-	assert.Contains(t, actuals, expectedGoodBidEvent)
-	assert.Contains(t, actuals, expectedGoodAskEvent)
+	assert.Contains(t, actuals, expectedBookUpdate)
 
 	assertContainsErrorLog(t, logBuffer.buf, "error unmarshalling book update")
+	assertContainsErrorLog(t, logBuffer.buf, "wrong number of fields in bookEntry")
 }
 
 type logline struct {
 	Msg   string `json:"message"`
+	Error string `json:"error"`
 	Level string `json:"level"`
 }
 
@@ -703,7 +756,7 @@ func assertContainsErrorLog(t *testing.T, b bytes.Buffer, msg string) {
 	assert.NoError(t, err)
 
 	for _, l := range logs {
-		if l.Level == "error" && strings.Contains(l.Msg, msg) {
+		if l.Level == "error" && (strings.Contains(l.Msg, msg) || strings.Contains(l.Error, msg)) {
 			return
 		}
 	}

@@ -2,13 +2,12 @@ package agent
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
-	"github.com/stevestotter/go-binance-agent-sdk/feeder"
+	"github.com/stevestotter/go-binance-agent-sdk/exchange"
 	mock_agent "github.com/stevestotter/go-binance-agent-sdk/mocks/agent"
-	mock_feeder "github.com/stevestotter/go-binance-agent-sdk/mocks/feeder"
+	mock_exchange "github.com/stevestotter/go-binance-agent-sdk/mocks/exchange"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -19,7 +18,7 @@ func TestAgentStartReturnsErrWhenTradeFeederFailsToInitialise(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStrategy := mock_agent.NewMockMarketListener(ctrl)
-	mockFeeder := mock_feeder.NewMockFeeder(ctrl)
+	mockFeeder := mock_exchange.NewMockFeeder(ctrl)
 
 	mockFeeder.EXPECT().
 		Trades().
@@ -37,12 +36,12 @@ func TestAgentStartReturnsErrWhenBookUpdatesFeederFailsToInitialise(t *testing.T
 	defer ctrl.Finish()
 
 	mockStrategy := mock_agent.NewMockMarketListener(ctrl)
-	mockFeeder := mock_feeder.NewMockFeeder(ctrl)
+	mockFeeder := mock_exchange.NewMockFeeder(ctrl)
 
 	mockFeeder.EXPECT().
 		Trades().
 		Times(1).
-		Return(make(chan feeder.Trade), nil)
+		Return(make(chan exchange.Trade), nil)
 
 	mockFeeder.EXPECT().
 		BookUpdates().
@@ -60,8 +59,8 @@ func TestAgentStartSendsTradesToStrategy(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStrategy := mock_agent.NewMockMarketListener(ctrl)
-	mockFeeder := mock_feeder.NewMockFeeder(ctrl)
-	tradeChan := make(chan feeder.Trade)
+	mockFeeder := mock_exchange.NewMockFeeder(ctrl)
+	tradeChan := make(chan exchange.Trade)
 
 	var expPrice float64 = 1.01
 	var expQuantity float64 = 100
@@ -77,7 +76,7 @@ func TestAgentStartSendsTradesToStrategy(t *testing.T) {
 	mockFeeder.EXPECT().
 		BookUpdates().
 		Times(1).
-		Return(make(chan feeder.Event), nil)
+		Return(make(chan exchange.BookUpdate), nil)
 
 	mockStrategy.EXPECT().
 		OnTrade(expPrice, expQuantity, expTradeID, expBuyerOrderID, expSellerOrderID, gomock.Any()).
@@ -86,19 +85,15 @@ func TestAgentStartSendsTradesToStrategy(t *testing.T) {
 	a := Agent{mockFeeder, mockStrategy}
 	go a.Start()
 
-	trade := feeder.Trade{
+	trade := exchange.Trade{
 		BuyerOrderID:  88,
 		SellerOrderID: 52,
 		TradeTime:     123456785,
-		Order: feeder.Order{
-			ID: 12345,
-			Event: feeder.Event{
-				Type:      "trade",
-				EventTime: 123456789,
-				Price:     fmt.Sprint(expPrice),
-				Quantity:  fmt.Sprint(expQuantity),
-			},
-		},
+		ID:            12345,
+		Type:          "trade",
+		EventTime:     123456789,
+		Price:         expPrice,
+		Quantity:      expQuantity,
 	}
 
 	tradeChan <- trade
@@ -112,8 +107,8 @@ func TestAgentStartSendsBookBidUpdatesToStrategy(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStrategy := mock_agent.NewMockMarketListener(ctrl)
-	mockFeeder := mock_feeder.NewMockFeeder(ctrl)
-	eventChan := make(chan feeder.Event)
+	mockFeeder := mock_exchange.NewMockFeeder(ctrl)
+	bookUpdateChan := make(chan exchange.BookUpdate)
 
 	var expPrice float64 = 0.24
 	var expQuantity float64 = 10
@@ -121,28 +116,34 @@ func TestAgentStartSendsBookBidUpdatesToStrategy(t *testing.T) {
 	mockFeeder.EXPECT().
 		Trades().
 		Times(1).
-		Return(make(chan feeder.Trade), nil)
+		Return(make(chan exchange.Trade), nil)
 
 	mockFeeder.EXPECT().
 		BookUpdates().
 		Times(1).
-		Return(eventChan, nil)
+		Return(bookUpdateChan, nil)
 
 	mockStrategy.EXPECT().
 		OnBookUpdateBid(expPrice, expQuantity, gomock.Any()).
 		Times(1)
 
+	mockStrategy.EXPECT().
+		OnBookUpdateAsk(gomock.Any(), gomock.Any(), gomock.Any()).
+		Times(0)
+
 	a := Agent{mockFeeder, mockStrategy}
 	go a.Start()
 
-	event := feeder.Event{
-		Type:      "bid",
-		EventTime: 123456789,
-		Price:     fmt.Sprint(expPrice),
-		Quantity:  fmt.Sprint(expQuantity),
+	bookUpdate := exchange.BookUpdate{
+		Bids: []exchange.BookEntry{
+			{
+				Price:    expPrice,
+				Quantity: expQuantity,
+			},
+		},
 	}
 
-	eventChan <- event
+	bookUpdateChan <- bookUpdate
 
 	// Give time for mock to be asserted
 	time.Sleep(time.Duration(0.2 * float64(time.Second)))
@@ -153,8 +154,8 @@ func TestAgentStartSendsBookAskUpdatesToStrategy(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStrategy := mock_agent.NewMockMarketListener(ctrl)
-	mockFeeder := mock_feeder.NewMockFeeder(ctrl)
-	eventChan := make(chan feeder.Event)
+	mockFeeder := mock_exchange.NewMockFeeder(ctrl)
+	bookUpdateChan := make(chan exchange.BookUpdate)
 
 	var expPrice float64 = 0.24
 	var expQuantity float64 = 10
@@ -162,40 +163,46 @@ func TestAgentStartSendsBookAskUpdatesToStrategy(t *testing.T) {
 	mockFeeder.EXPECT().
 		Trades().
 		Times(1).
-		Return(make(chan feeder.Trade), nil)
+		Return(make(chan exchange.Trade), nil)
 
 	mockFeeder.EXPECT().
 		BookUpdates().
 		Times(1).
-		Return(eventChan, nil)
+		Return(bookUpdateChan, nil)
 
 	mockStrategy.EXPECT().
 		OnBookUpdateAsk(expPrice, expQuantity, gomock.Any()).
 		Times(1)
 
+	mockStrategy.EXPECT().
+		OnBookUpdateBid(gomock.Any(), gomock.Any(), gomock.Any()).
+		Times(0)
+
 	a := Agent{mockFeeder, mockStrategy}
 	go a.Start()
 
-	event := feeder.Event{
-		Type:      "ask",
-		EventTime: 123456789,
-		Price:     fmt.Sprint(expPrice),
-		Quantity:  fmt.Sprint(expQuantity),
+	bookUpdate := exchange.BookUpdate{
+		Asks: []exchange.BookEntry{
+			{
+				Price:    expPrice,
+				Quantity: expQuantity,
+			},
+		},
 	}
 
-	eventChan <- event
+	bookUpdateChan <- bookUpdate
 
 	// Give time for mock to be asserted
 	time.Sleep(time.Duration(0.2 * float64(time.Second)))
 }
 
-func TestAgentStartDoesNotSendRemovalBookUpdatesToStrategy(t *testing.T) {
+func TestAgentStartDoesNotSendBidRemovalBookUpdatesToStrategy(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	mockStrategy := mock_agent.NewMockMarketListener(ctrl)
-	mockFeeder := mock_feeder.NewMockFeeder(ctrl)
-	eventChan := make(chan feeder.Event)
+	mockFeeder := mock_exchange.NewMockFeeder(ctrl)
+	bookUpdateChan := make(chan exchange.BookUpdate)
 
 	var expPrice float64 = 0.24
 
@@ -205,61 +212,75 @@ func TestAgentStartDoesNotSendRemovalBookUpdatesToStrategy(t *testing.T) {
 	mockFeeder.EXPECT().
 		Trades().
 		Times(1).
-		Return(make(chan feeder.Trade), nil)
+		Return(make(chan exchange.Trade), nil)
 
 	mockFeeder.EXPECT().
 		BookUpdates().
 		Times(1).
-		Return(eventChan, nil)
+		Return(bookUpdateChan, nil)
+
+	mockStrategy.EXPECT().
+		OnBookUpdateBid(gomock.Any(), gomock.Any(), gomock.Any()).
+		Times(0)
 
 	a := Agent{mockFeeder, mockStrategy}
 	go a.Start()
 
-	event := feeder.Event{
-		Type:      "bid",
-		EventTime: 123456789,
-		Price:     fmt.Sprint(expPrice),
-		Quantity:  fmt.Sprint(expQuantity),
+	bookUpdate := exchange.BookUpdate{
+		Bids: []exchange.BookEntry{
+			{
+				Price:    expPrice,
+				Quantity: expQuantity,
+			},
+		},
 	}
 
-	eventChan <- event
+	bookUpdateChan <- bookUpdate
 
 	// Give time for mock to not be asserted in this case
 	time.Sleep(time.Duration(0.2 * float64(time.Second)))
 }
 
-func TestAgentStartDoesNotSendUnknownBookUpdatesToStrategy(t *testing.T) {
+func TestAgentStartDoesNotSendAskRemovalBookUpdatesToStrategy(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	mockStrategy := mock_agent.NewMockMarketListener(ctrl)
-	mockFeeder := mock_feeder.NewMockFeeder(ctrl)
-	eventChan := make(chan feeder.Event)
+	mockFeeder := mock_exchange.NewMockFeeder(ctrl)
+	bookUpdateChan := make(chan exchange.BookUpdate)
 
 	var expPrice float64 = 0.24
-	var expQuantity float64 = 10
+
+	// quantity 0 indicates a removal
+	var expQuantity float64 = 0
 
 	mockFeeder.EXPECT().
 		Trades().
 		Times(1).
-		Return(make(chan feeder.Trade), nil)
+		Return(make(chan exchange.Trade), nil)
 
 	mockFeeder.EXPECT().
 		BookUpdates().
 		Times(1).
-		Return(eventChan, nil)
+		Return(bookUpdateChan, nil)
+
+	mockStrategy.EXPECT().
+		OnBookUpdateAsk(gomock.Any(), gomock.Any(), gomock.Any()).
+		Times(0)
 
 	a := Agent{mockFeeder, mockStrategy}
 	go a.Start()
 
-	event := feeder.Event{
-		Type:      "something",
-		EventTime: 123456789,
-		Price:     fmt.Sprint(expPrice),
-		Quantity:  fmt.Sprint(expQuantity),
+	bookUpdate := exchange.BookUpdate{
+		Asks: []exchange.BookEntry{
+			{
+				Price:    expPrice,
+				Quantity: expQuantity,
+			},
+		},
 	}
 
-	eventChan <- event
+	bookUpdateChan <- bookUpdate
 
 	// Give time for mock to not be asserted in this case
 	time.Sleep(time.Duration(0.2 * float64(time.Second)))

@@ -1,4 +1,4 @@
-package feeder
+package exchange
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-//go:generate go run -mod=mod github.com/golang/mock/mockgen --source=feeder.go --destination=../mocks/feeder/feeder.go
+//go:generate go run -mod=mod github.com/golang/mock/mockgen --source=feeder.go --destination=../mocks/exchange/feeder.go
 
 const (
 	// BinanceURL is the base URL for all interactions with the Binance platform
@@ -29,10 +29,11 @@ var (
 
 // Feeder is an interface for market exchange feeds
 // Trades returns a channel of Trades made in the market
-// BookUpdates returns an event channel indicating market order book activity
+// BookUpdates returns a channel of batched BookUpdates indicating market order book activity
 type Feeder interface {
 	Trades() (<-chan Trade, error)
-	BookUpdates() (<-chan Event, error)
+	BookUpdates() (<-chan BookUpdate, error)
+	GetSymbol() string
 }
 
 // Taken from https://binance-docs.github.io/apidocs/spot/en/#aggregate-trade-streams
@@ -52,28 +53,18 @@ type Feeder interface {
 
 // Trade contains information about a completed trade
 type Trade struct {
-	Order
-	BuyerOrderID  int `json:"b"` //should be string
-	SellerOrderID int `json:"a"` //should be string
-	TradeTime     int `json:"T"`
-}
-
-// Order is an event that has a known ID
-type Order struct {
-	ID int `json:"t"` //should be string
-	Event
-}
-
-// Event contains information about a posted bid, ask or trade
-type Event struct {
 	// Have to include json:"e" even though not wanted as encoding/json Unmarshal() has a bug with case-sensitivity on named parameters
 	// Issue discussed here: https://github.com/golang/go/issues/14750
 	// Watching proposed change to package here: https://go-review.googlesource.com/c/go/+/224079/
-	Type string `json:"e"`
+	Type string `json:"e"` // Will always be "trade"
 
-	EventTime int    `json:"E"`
-	Price     string `json:"p"`
-	Quantity  string `json:"q"`
+	ID            int     `json:"t"`
+	BuyerOrderID  int     `json:"b"`
+	SellerOrderID int     `json:"a"`
+	TradeTime     int     `json:"T"`
+	EventTime     int     `json:"E"`
+	Price         float64 `json:"p,string"`
+	Quantity      float64 `json:"q,string"`
 }
 
 // Taken from https://binance-docs.github.io/apidocs/spot/en/#diff-depth-stream
@@ -96,21 +87,50 @@ type Event struct {
 //     ]
 //   ]
 // }
-type bookUpdate struct {
+
+// BookUpdate contains orderbook depth updates - multiple bids and asks since the last update event
+type BookUpdate struct {
 	// Have to include Type even though not wanted as encoding/json Unmarshal() has a bug with case-sensitivity on named parameters
 	// Issue discussed here: https://github.com/golang/go/issues/14750
 	// Watching proposed change to package here: https://go-review.googlesource.com/c/go/+/224079/
-	Type string `json:"e"`
+	Type string `json:"e"` // Will always be "depthUpdate"
 
-	EventTime int        `json:"E"`
-	Bids      [][]string `json:"b"`
-	Asks      [][]string `json:"a"`
+	EventTime    int         `json:"E"`
+	Bids         []BookEntry `json:"b"`
+	Asks         []BookEntry `json:"a"`
+	LastUpdateID int         `json:"u"` // Final update ID in event
 }
 
-type BinanceFeeder struct {
+type BookEntry struct {
+	Price    float64
+	Quantity float64
+}
+
+func (be *BookEntry) UnmarshalJSON(buf []byte) error {
+	var tmp []json.Number
+
+	var err error
+	if err = json.Unmarshal(buf, &tmp); err != nil {
+		return err
+	}
+	if numFields := len(tmp); numFields != 2 {
+		return fmt.Errorf("wrong number of fields in bookEntry: %d != 2", numFields)
+	}
+
+	if be.Price, err = tmp[0].Float64(); err != nil {
+		return err
+	}
+	if be.Quantity, err = tmp[1].Float64(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type binanceFeeder struct {
 	baseURL       string
 	socketOptions *SocketConnectionOptions
-	Symbol        string
+	symbol        string
 }
 
 type SocketConnectionOptions struct {
@@ -125,15 +145,19 @@ var DefaultSocketOptions = &SocketConnectionOptions{
 	BackOffTime: 5 * time.Second,
 }
 
-func NewBinanceFeeder(symbol string) *BinanceFeeder {
-	return &BinanceFeeder{
+func NewBinanceFeeder(symbol string) *binanceFeeder {
+	return &binanceFeeder{
 		baseURL:       BinanceURL,
 		socketOptions: DefaultSocketOptions,
-		Symbol:        symbol,
+		symbol:        symbol,
 	}
 }
 
-func (bf *BinanceFeeder) connectAndListen(url string, mChan chan []byte, attempt int) error {
+func (bf *binanceFeeder) GetSymbol() string {
+	return bf.symbol
+}
+
+func (bf *binanceFeeder) connectAndListen(url string, mChan chan []byte, attempt int) error {
 	log.Info().Msgf("connecting to %s", url)
 
 	var err error
@@ -181,8 +205,8 @@ func (bf *BinanceFeeder) connectAndListen(url string, mChan chan []byte, attempt
 }
 
 // Trades returns a read-only channel of trades made on the market
-func (bf *BinanceFeeder) Trades() (<-chan Trade, error) {
-	u := url.URL{Scheme: "wss", Host: bf.baseURL, Path: fmt.Sprintf("ws/%s@trade", bf.Symbol)}
+func (bf *binanceFeeder) Trades() (<-chan Trade, error) {
+	u := url.URL{Scheme: "wss", Host: bf.baseURL, Path: fmt.Sprintf("ws/%s@trade", bf.symbol)}
 
 	mChan := make(chan []byte)
 	err := bf.connectAndListen(u.String(), mChan, 0)
@@ -204,49 +228,26 @@ func (bf *BinanceFeeder) Trades() (<-chan Trade, error) {
 	return tChan, err
 }
 
-// BookUpdates returns a read-only channel of updates made on the orderbook in the market
-func (bf *BinanceFeeder) BookUpdates() (<-chan Event, error) {
-	u := url.URL{Scheme: "wss", Host: bf.baseURL, Path: fmt.Sprintf("ws/%s@depth@100ms", bf.Symbol)}
+// BookUpdates returns a read-only channel of updates made on the orderbook in the market.
+func (bf *binanceFeeder) BookUpdates() (<-chan BookUpdate, error) {
+	u := url.URL{Scheme: "wss", Host: bf.baseURL, Path: fmt.Sprintf("ws/%s@depth@100ms", bf.symbol)}
 
 	mChan := make(chan []byte)
 	err := bf.connectAndListen(u.String(), mChan, 0)
 
-	eChan := make(chan Event)
+	buChan := make(chan BookUpdate)
 	go func() {
-		defer close(eChan)
+		defer close(buChan)
 		for message := range mChan {
-			var b bookUpdate
+			var b BookUpdate
 			if err := json.Unmarshal(message, &b); err != nil {
 				log.Error().Err(err).
 					Str("detail", string(message)).
 					Msgf("error unmarshalling book update")
 				continue
 			}
-
-			go func() {
-				for _, bid := range b.Bids {
-					e := Event{
-						Type:      Bid,
-						EventTime: b.EventTime,
-						Price:     bid[0],
-						Quantity:  bid[1],
-					}
-					eChan <- e
-				}
-			}()
-
-			go func() {
-				for _, ask := range b.Asks {
-					e := Event{
-						Type:      Ask,
-						EventTime: b.EventTime,
-						Price:     ask[0],
-						Quantity:  ask[1],
-					}
-					eChan <- e
-				}
-			}()
+			buChan <- b
 		}
 	}()
-	return eChan, err
+	return buChan, err
 }
